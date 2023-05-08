@@ -326,7 +326,7 @@ chmod +x /etc/rc.d/rc.local
 systemctl enable rc-local.service
 systemctl start rc-local.service
 systemctl restart rc-local.service
-echo "gost -L=root123:root123@:2021 &" >>  /etc/rc.d/rc.local.
+echo "gost -L=root123:root123@:2021 &" >>  /etc/rc.d/rc.local
 systemctl restart rc-local.service
 #gost 代理
 
