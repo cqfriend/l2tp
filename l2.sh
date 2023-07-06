@@ -121,8 +121,8 @@ preinstall_l2tp(){
     echo
 	ipc=$(ifconfig  eth0 |awk '/inet /{print $2}'|awk -F . '{print $NF}')
     iprange="172.$[$RANDOM%16+16].${ipc}"
-    username="root123"
-    password="root123"
+    username="game"
+    password="123"
     mypsk="1"
 
    
