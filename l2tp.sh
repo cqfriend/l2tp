@@ -177,7 +177,7 @@ conn l2tp-psk-nonat
     dpddelay=40
     dpdtimeout=130
     dpdaction=clear
-    sha2-truncbug=yes
+    sha2-truncbug=no #兼容ios14 以上系统
 EOF
 
     cat > /etc/ipsec.secrets<<EOF
