@@ -265,17 +265,8 @@ yum_install(){
 
 finally(){
 
-    cd ${cur_dir}
-    rm -fr ${cur_dir}/l2tp
-    # create l2tp command
-    cp -f ${cur_dir}/`basename $0` /usr/bin/l2tp
-
-    echo "Please wait a moment..."
-    sleep 2
     ipsec verify
   
- 
-
 
 systemctl stop firewalld
 systemctl disable firewalld
