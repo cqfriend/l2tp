@@ -117,7 +117,7 @@ preinstall_l2tp(){
         fi
     fi
     echo
-	ipc=$(ifconfig  eth0 |awk '/inet /{print $2}'|awk -F . '{print $NF}')
+	ipc=$( ifconfig   |awk '/inet /{print $2}'|awk -F . 'NR==1 {print $NF}')
     iprange="172.$[$RANDOM%16+16].${ipc}"
     mypsk="1"
 
