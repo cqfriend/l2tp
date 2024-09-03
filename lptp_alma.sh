@@ -4,8 +4,6 @@ export PATH
 
 cur_dir=`pwd`
 
-# libreswan_filename="libreswan-3.27"
-# download_root_url="https://dl.lamp.sh/files"
 yum -y install net-tools psmisc wget
 rootness(){
     if [[ $EUID -ne 0 ]]; then
@@ -119,7 +117,7 @@ preinstall_l2tp(){
         fi
     fi
     echo
-	ipc=$(ifconfig  eth0 |awk '/inet /{print $2}'|awk -F . '{print $NF}')
+	ipc=$( ifconfig   |awk '/inet /{print $2}'|awk -F . 'NR==1 {print $NF}')
     iprange="172.$[$RANDOM%16+16].${ipc}"
     mypsk="1"
 
@@ -179,7 +177,7 @@ conn l2tp-psk-nonat
     dpddelay=40
     dpdtimeout=130
     dpdaction=clear
-    sha2-truncbug=yes
+    sha2-truncbug=no #兼容ios14 以上系统
 EOF
 
     cat > /etc/ipsec.secrets<<EOF
@@ -229,7 +227,6 @@ game    l2tpd    123        *
 
 
 EOF
-sed -i '/^ExecStartPre=\//s/=/=-/' /usr/lib/systemd/system/xl2tpd.service
 
 }
 
@@ -268,17 +265,8 @@ yum_install(){
 
 finally(){
 
-    cd ${cur_dir}
-    rm -fr ${cur_dir}/l2tp
-    # create l2tp command
-    cp -f ${cur_dir}/`basename $0` /usr/bin/l2tp
-
-    echo "Please wait a moment..."
-    sleep 2
     ipsec verify
   
- 
-
 
 systemctl stop firewalld
 systemctl disable firewalld
