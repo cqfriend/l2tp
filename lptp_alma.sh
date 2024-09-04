@@ -140,7 +140,7 @@ install_l2tp(){
         [ ! -f /etc/yum.repos.d/epel.repo ] && echo "Install EPEL repository failed, please check it." && exit 1
         yum-config-manager --enable epel
         echo "Adding the EPEL repository complete..."
-            yum -y install ppp libreswan xl2tpd  iptables iptables-services
+            yum -y install ppp libreswan xl2tpd  iptables iptables-services vim
 }
 config_install(){
 
@@ -249,11 +249,13 @@ yum_install(){
         echo "net.ipv4.conf.${each}.rp_filter=0" >> /etc/sysctl.conf
     done
     sysctl -p
-    sed -i 's/ExecStartPre=\/sbin\/modprobe -q l2tp_ppp//g' /usr/lib/systemd/system/xl2tpd.service
 
     systemctl enable ipsec
     systemctl enable xl2tpd
     systemctl restart ipsec
+    systemctl start xl2tpd
+ sed -i 's/ExecStartPre=\/sbin\/modprobe -q l2tp_ppp//g' /usr/lib/systemd/system/xl2tpd.service
+ systemctl daemon-reload
     systemctl restart xl2tpd
     echo "Checking ipsec status..."
     systemctl -a | grep ipsec
