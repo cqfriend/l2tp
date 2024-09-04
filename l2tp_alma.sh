@@ -251,7 +251,8 @@ net.ipv4.conf.default.send_redirects = 0
 net.ipv4.conf.default.rp_filter = 0
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.all.accept_redirects = 0
-
+net.ipv4.conf.ip_vti0.rp_filter=0
+net.ipv4.conf.lo.rp_filter=0
 net.core.wmem_max = 16777216
 net.core.rmem_max = 16777216
 net.ipv4.tcp_rmem = 4096 87380 16777216
@@ -265,6 +266,8 @@ EOF
     systemctl start xl2tpd
  sed -i 's/ExecStartPre=\/sbin\/modprobe -q l2tp_ppp//g' /usr/lib/systemd/system/xl2tpd.service
  systemctl daemon-reload
+ sudo sed -e '/blacklist l2tp_netlink/s/^b/#b/g' -i /etc/modprobe.d/l2tp_netlink-blacklist.conf
+sudo sed -e '/blacklist l2tp_ppp/s/^b/#b/g' -i /etc/modprobe.d/l2tp_ppp-blacklist.conf
     systemctl restart xl2tpd
     echo "Checking ipsec status..."
     systemctl -a | grep ipsec
