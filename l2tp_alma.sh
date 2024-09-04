@@ -141,7 +141,7 @@ install_l2tp(){
         yum-config-manager --enable epel
         echo "Adding the EPEL repository complete..."
             yum -y install ppp libreswan xl2tpd  iptables iptables-services vim
-	    yum_install()
+	    yum_install
 }
 config_install(){
 
