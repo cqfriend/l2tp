@@ -236,18 +236,27 @@ yum_install(){
 
     cp -pf /etc/sysctl.conf /etc/sysctl.conf.bak
 
-    echo "# Added by L2TP VPN" >> /etc/sysctl.conf
-    echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
-    echo "net.ipv4.tcp_syncookies=1" >> /etc/sysctl.conf
-    echo "net.ipv4.icmp_echo_ignore_broadcasts=1" >> /etc/sysctl.conf
-    echo "net.ipv4.icmp_ignore_bogus_error_responses=1" >> /etc/sysctl.conf
+cat >> /etc/sysctl.conf <<EOF
 
-    for each in `ls /proc/sys/net/ipv4/conf/`; do
-        echo "net.ipv4.conf.${each}.accept_source_route=0" >> /etc/sysctl.conf
-        echo "net.ipv4.conf.${each}.accept_redirects=0" >> /etc/sysctl.conf
-        echo "net.ipv4.conf.${each}.send_redirects=0" >> /etc/sysctl.conf
-        echo "net.ipv4.conf.${each}.rp_filter=0" >> /etc/sysctl.conf
-    done
+# Added by hwdsl2 VPN script
+kernel.msgmnb = 65536
+kernel.msgmax = 65536
+
+net.ipv4.ip_forward = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.all.rp_filter = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.default.rp_filter = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.all.accept_redirects = 0
+
+net.core.wmem_max = 16777216
+net.core.rmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 87380 16777216
+EOF
     sysctl -p
 
     systemctl enable ipsec
