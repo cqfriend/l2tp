@@ -1,64 +1,45 @@
 #!/usr/bin/env bash
 set -e
-
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-cur_dir=$(pwd)
-
-# 用户名和密码自定义
 username="piminer"
 password="piminer123"
 mypsk="1"
 
-rootness(){
+check_root() {
     if [[ $EUID -ne 0 ]]; then
-        echo "Error: This script must be run as root!" >&2
+        echo "This script must be run as root"
         exit 1
     fi
 }
 
-tunavailable(){
+check_tun() {
     if [[ ! -e /dev/net/tun ]]; then
-        echo "Error: TUN/TAP is not available!" >&2
+        echo "TUN device is not available. Enable it before running this script."
         exit 1
     fi
 }
 
-get_ip(){
+get_ip() {
     IP=$(hostname -I | awk '{print $1}')
-    [ -z "$IP" ] && IP=$(wget -qO- ipv4.icanhazip.com)
-}
-
-disable_firewalld(){
-    echo "Disabling UFW (if present)..."
-    systemctl disable ufw >/dev/null 2>&1 || true
-    systemctl stop ufw >/dev/null 2>&1 || true
-}
-
-preinstall_l2tp(){
-    echo "Checking for OpenVZ..."
-    if [ -d "/proc/vz" ]; then
-        echo "WARNING: Your system uses OpenVZ. IPSec may not work properly."
-        read -p "Continue anyway? [y/N]: " confirm
-        [[ "$confirm" != "y" ]] && exit 0
+    if [[ -z "$IP" ]]; then
+        IP=$(wget -qO- ipv4.icanhazip.com)
     fi
-
-    ipc=$(hostname -I | awk -F '.' '{print $3}')
-    iprange="172.$((RANDOM % 16 + 16)).${ipc:-16}"
+    echo "Detected public IP: $IP"
 }
 
-install_dependencies(){
-    echo "Installing required packages..."
+install_packages() {
+    echo "[INFO] Updating and installing packages..."
     apt update
-    DEBIAN_FRONTEND=noninteractive apt install -y strongswan xl2tpd ppp iptables iptables-persistent wget curl net-tools
+    apt install -y strongswan xl2tpd ppp iptables iproute2
 }
 
-configure_ipsec(){
-    echo "Configuring IPsec..."
+configure_ipsec() {
+    echo "[INFO] Configuring IPsec..."
     cat > /etc/ipsec.conf <<EOF
 config setup
-    charondebug="all"
-    uniqueids=no
+    uniqueids=never 
+    charondebug="ike 1, knl 1, cfg 0"
 
 conn l2tp-psk
     keyexchange=ikev1
@@ -76,103 +57,102 @@ EOF
 EOF
 }
 
-configure_xl2tpd(){
-    echo "Configuring xl2tpd..."
+configure_xl2tpd() {
+    echo "[INFO] Configuring xl2tpd..."
+    iprange="172.$((RANDOM % 16 + 16)).$(hostname -I | awk '{print $1}' | awk -F. '{print $NF}')"
+    
     cat > /etc/xl2tpd/xl2tpd.conf <<EOF
 [global]
 port = 1701
 
 [lns default]
-ip range = ${iprange}.2-${iprange}.10
+ip range = ${iprange}.10-${iprange}.100
 local ip = ${iprange}.1
 require chap = yes
 refuse pap = yes
 require authentication = yes
 name = l2tpd
+ppp debug = yes
 pppoptfile = /etc/ppp/options.xl2tpd
 length bit = yes
 EOF
 
     cat > /etc/ppp/options.xl2tpd <<EOF
-ipcp-accept-local
-ipcp-accept-remote
 require-mschap-v2
 ms-dns 8.8.8.8
 ms-dns 8.8.4.4
-noccp
 auth
+mtu 1410
+mru 1410
+crtscts
+lock
 hide-password
-idle 1800
+modem
 debug
 proxyarp
-connect-delay 5000
+lcp-echo-failure 4
+lcp-echo-interval 30
 EOF
 
     cat > /etc/ppp/chap-secrets <<EOF
 # client    server    secret    IP addresses
-$username   l2tpd     $password  *
+${username} l2tpd ${password} *
 EOF
 }
 
-enable_ip_forwarding(){
-    echo "Enabling IP forwarding..."
-    sed -i '/^#net.ipv4.ip_forward=1/c\net.ipv4.ip_forward=1' /etc/sysctl.conf
-    sysctl -p
+enable_ip_forwarding() {
+    echo "[INFO] Enabling IP forwarding..."
+    echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-l2tp.conf
+    sysctl -p /etc/sysctl.d/99-l2tp.conf
 }
 
-configure_iptables(){
-    echo "Configuring iptables rules..."
-    iptables -F
-    iptables -X
-    iptables -t nat -F
-    iptables -t nat -X
-
+configure_firewall() {
+    echo "[INFO] Configuring iptables..."
+    iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
     iptables -A INPUT -p udp --dport 500 -j ACCEPT
     iptables -A INPUT -p udp --dport 4500 -j ACCEPT
     iptables -A INPUT -p udp --dport 1701 -j ACCEPT
-    iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    iptables -A INPUT -i lo -j ACCEPT
-    iptables -A INPUT -p icmp -j ACCEPT
-    iptables -P INPUT DROP
-    iptables -P FORWARD ACCEPT
-    iptables -P OUTPUT ACCEPT
+    iptables -A INPUT -p esp -j ACCEPT
+    iptables -A INPUT -p ah -j ACCEPT
 
-    iptables -t nat -A POSTROUTING -s ${iprange}.0/24 -o eth0 -j MASQUERADE
+    iptables-save > /etc/iptables.rules
 
-    netfilter-persistent save
+    cat > /etc/network/if-pre-up.d/iptables <<EOF
+#!/bin/sh
+/sbin/iptables-restore < /etc/iptables.rules
+EOF
+    chmod +x /etc/network/if-pre-up.d/iptables
 }
 
-start_services(){
-    echo "Starting services..."
+restart_services() {
+    echo "[INFO] Restarting services..."
     systemctl restart strongswan
     systemctl restart xl2tpd
     systemctl enable strongswan
     systemctl enable xl2tpd
 }
 
-print_info(){
+print_info() {
     echo
-    echo "VPN setup completed."
-    echo "=============================="
-    echo "Server IP   : $IP"
-    echo "Username    : $username"
-    echo "Password    : $password"
-    echo "PSK         : $mypsk"
-    echo "=============================="
+    echo "✅ L2TP/IPSec VPN setup completed!"
+    echo
+    echo "Server IP    : $IP"
+    echo "PSK (secret) : $mypsk"
+    echo "Username     : $username"
+    echo "Password     : $password"
+    echo
 }
 
-main(){
-    rootness
-    tunavailable
+main() {
+    check_root
+    check_tun
     get_ip
-    preinstall_l2tp
-    disable_firewalld
-    install_dependencies
+    install_packages
     configure_ipsec
     configure_xl2tpd
     enable_ip_forwarding
-    configure_iptables
-    start_services
+    configure_firewall
+    restart_services
     print_info
 }
 
