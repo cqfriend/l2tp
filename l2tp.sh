@@ -125,17 +125,14 @@ enable_ip_forwarding() {
 
 configure_firewall() {
     echo "[INFO] Configuring iptables..."
-    # 清除 nat 表的所有规则
-iptables -t nat -F
-
+# 清除 nat 表的所有规则
+#iptables -t nat -F
 # 清除 filter 表的所有规则
-iptables -F
-
+#iptables -F
 # 清除 mangle 表的所有规则（如果有使用）
-iptables -t mangle -F
-
+#iptables -t mangle -F
 # 清除 raw 表的所有规则（如果有使用）
-iptables -t raw -F
+#iptables -t raw -F
     iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
     iptables -A INPUT -p udp --dport 500 -j ACCEPT
     iptables -A INPUT -p udp --dport 4500 -j ACCEPT
