@@ -1,190 +1,84 @@
 #!/usr/bin/env bash
-PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
-export PATH
+set -e
 
-cur_dir=`pwd`
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-yum -y install net-tools psmisc wget
+cur_dir=$(pwd)
+
+# 用户名和密码自定义
+username="piminer"
+password="piminer123"
+mypsk="1"
+
 rootness(){
     if [[ $EUID -ne 0 ]]; then
-       echo "Error:This script must be run as root!" 1>&2
-       exit 1
+        echo "Error: This script must be run as root!" >&2
+        exit 1
     fi
 }
 
 tunavailable(){
     if [[ ! -e /dev/net/tun ]]; then
-        echo "Error:TUN/TAP is not available!" 1>&2
+        echo "Error: TUN/TAP is not available!" >&2
         exit 1
     fi
 }
 
-disable_selinux(){
-if [ -s /etc/selinux/config ] && grep 'SELINUX=enforcing' /etc/selinux/config; then
-    sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
-    setenforce 0
-fi
+get_ip(){
+    IP=$(hostname -I | awk '{print $1}')
+    [ -z "$IP" ] && IP=$(wget -qO- ipv4.icanhazip.com)
 }
 
-get_opsy(){
-    [ -f /etc/redhat-release ] && awk '{print ($1,$3~/^[0-9]/?$3:$4)}' /etc/redhat-release && return
-    [ -f /etc/os-release ] && awk -F'[= "]' '/PRETTY_NAME/{print $3,$4,$5}' /etc/os-release && return
-    [ -f /etc/lsb-release ] && awk -F'[="]+' '/DESCRIPTION/{print $2}' /etc/lsb-release && return
+disable_firewalld(){
+    echo "Disabling UFW (if present)..."
+    systemctl disable ufw >/dev/null 2>&1 || true
+    systemctl stop ufw >/dev/null 2>&1 || true
 }
-
-get_os_info(){
-    IP=$( ip addr | egrep -o '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | egrep -v "^192\.168|^172\.1[6-9]\.|^172\.2[0-9]\.|^172\.3[0-2]\.|^10\.|^127\.|^255\.|^0\." | head -n 1 )
-    [ -z ${IP} ] && IP=$( wget -qO- -t1 -T2 ipv4.icanhazip.com )
-
-    local cname=$( awk -F: '/model name/ {name=$2} END {print name}' /proc/cpuinfo | sed 's/^[ \t]*//;s/[ \t]*$//' )
-    local cores=$( awk -F: '/model name/ {core++} END {print core}' /proc/cpuinfo )
-    local freq=$( awk -F: '/cpu MHz/ {freq=$2} END {print freq}' /proc/cpuinfo | sed 's/^[ \t]*//;s/[ \t]*$//' )
-    local tram=$( free -m | awk '/Mem/ {print $2}' )
-    local swap=$( free -m | awk '/Swap/ {print $2}' )
-    local up=$( awk '{a=$1/86400;b=($1%86400)/3600;c=($1%3600)/60;d=$1%60} {printf("%ddays, %d:%d:%d\n",a,b,c,d)}' /proc/uptime )
-    local load=$( w | head -1 | awk -F'load average:' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//' )
-    local opsy=$( get_opsy )
-    local arch=$( uname -m )
-    local lbit=$( getconf LONG_BIT )
-    local host=$( hostname )
-    local kern=$( uname -r )
-
-    echo "########## System Information ##########"
-    echo 
-    echo "CPU model            : ${cname}"
-    echo "Number of cores      : ${cores}"
-    echo "CPU frequency        : ${freq} MHz"
-    echo "Total amount of ram  : ${tram} MB"
-    echo "Total amount of swap : ${swap} MB"
-    echo "System uptime        : ${up}"
-    echo "Load average         : ${load}"
-    echo "OS                   : ${opsy}"
-    echo "Arch                 : ${arch} (${lbit} Bit)"
-    echo "Kernel               : ${kern}"
-    echo "Hostname             : ${host}"
-    echo "IPv4 address         : ${IP}"
-    echo 
-    echo "########################################"
-}
-
-
-
-is_64bit(){
-    if [ `getconf WORD_BIT` = '32' ] && [ `getconf LONG_BIT` = '64' ] ; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# download_file(){
-    # if [ -s ${1} ]; then
-        # echo "$1 [found]"
-    # else
-        # echo "$1 not found!!!download now..."
-        # if ! wget -c -t3 -T60 ${download_root_url}/${1}; then
-            # echo "Failed to download $1, please download it to ${cur_dir} directory manually and try again."
-            # exit 1
-        # fi
-    # fi
-# }
-
-
-
-# get_char(){
-    # SAVEDSTTY=`stty -g`
-    # stty -echo
-    # stty cbreak
-    # dd if=/dev/tty bs=1 count=1 2> /dev/null
-    # stty -raw
-    # stty echo
-    # stty $SAVEDSTTY
-# }
 
 preinstall_l2tp(){
-
-    echo
+    echo "Checking for OpenVZ..."
     if [ -d "/proc/vz" ]; then
-        echo -e "\033[41;37m WARNING: \033[0m Your VPS is based on OpenVZ, and IPSec might not be supported by the kernel."
-        echo "Continue installation? (y/n)"
-        read -p "(Default: n)" agree
-        [ -z ${agree} ] && agree="n"
-        if [ "${agree}" == "n" ]; then
-            echo
-            echo "L2TP installation cancelled."
-            echo
-            exit 0
-        fi
+        echo "WARNING: Your system uses OpenVZ. IPSec may not work properly."
+        read -p "Continue anyway? [y/N]: " confirm
+        [[ "$confirm" != "y" ]] && exit 0
     fi
-    echo
-	ipc=$( ifconfig   |awk '/inet /{print $2}'|awk -F . 'NR==1 {print $NF}')
-    iprange="172.$[$RANDOM%16+16].${ipc}"
-    mypsk="1"
 
-   
-
-    echo
-    echo "ServerIP:${IP}"
-    echo "Server Local IP:${iprange}.1"
-    echo "Client Remote IP Range:${iprange}.2-${iprange}.10"
-    echo "PSK:${mypsk}"
+    ipc=$(hostname -I | awk -F '.' '{print $3}')
+    iprange="172.$((RANDOM % 16 + 16)).${ipc:-16}"
 }
 
-install_l2tp(){
-
-    mknod /dev/random c 1 9
-
-
-        echo "Adding the EPEL repository..."
-        yum -y install epel-release yum-utils
-        [ ! -f /etc/yum.repos.d/epel.repo ] && echo "Install EPEL repository failed, please check it." && exit 1
-        yum-config-manager --enable epel
-        echo "Adding the EPEL repository complete..."
-            yum -y install ppp libreswan xl2tpd  iptables-services iptables-devel pptpd
-            yum_install
-
+install_dependencies(){
+    echo "Installing required packages..."
+    apt update
+    DEBIAN_FRONTEND=noninteractive apt install -y strongswan xl2tpd ppp iptables iptables-persistent wget curl net-tools
 }
-config_install(){
 
-    cat > /etc/ipsec.conf<<EOF
-version 2.0
-
+configure_ipsec(){
+    echo "Configuring IPsec..."
+    cat > /etc/ipsec.conf <<EOF
 config setup
-    protostack=netkey
-    nhelpers=0
+    charondebug="all"
     uniqueids=no
-    interfaces=%defaultroute
-    virtual_private=%v4:10.0.0.0/8,%v4:192.168.0.0/16,%v4:172.16.0.0/12,%v4:!${iprange}.0/24
 
 conn l2tp-psk
-    rightsubnet=vhost:%priv
-    also=l2tp-psk-nonat
-
-conn l2tp-psk-nonat
+    keyexchange=ikev1
     authby=secret
-    pfs=no
-    auto=add
-    keyingtries=3
-    rekey=no
-    ikelifetime=8h
-    keylife=1h
     type=transport
-    left=%defaultroute
-    leftid=${IP}
+    left=$IP
     leftprotoport=17/1701
     right=%any
     rightprotoport=17/%any
-    dpddelay=40
-    dpdtimeout=130
-    dpdaction=clear
-    sha2-truncbug=no #兼容ios14 以上系统
+    auto=add
 EOF
 
-    cat > /etc/ipsec.secrets<<EOF
-%any %any : PSK "${mypsk}"
+    cat > /etc/ipsec.secrets <<EOF
+%any  %any  : PSK "$mypsk"
 EOF
+}
 
-    cat > /etc/xl2tpd/xl2tpd.conf<<EOF
+configure_xl2tpd(){
+    echo "Configuring xl2tpd..."
+    cat > /etc/xl2tpd/xl2tpd.conf <<EOF
 [global]
 port = 1701
 
@@ -195,12 +89,11 @@ require chap = yes
 refuse pap = yes
 require authentication = yes
 name = l2tpd
-ppp debug = yes
 pppoptfile = /etc/ppp/options.xl2tpd
 length bit = yes
 EOF
 
-    cat > /etc/ppp/options.xl2tpd<<EOF
+    cat > /etc/ppp/options.xl2tpd <<EOF
 ipcp-accept-local
 ipcp-accept-remote
 require-mschap-v2
@@ -210,136 +103,77 @@ noccp
 auth
 hide-password
 idle 1800
-#mtu 1410
-#mru 1410
-nodefaultroute
 debug
 proxyarp
 connect-delay 5000
 EOF
 
-    rm -f /etc/ppp/chap-secrets
-    cat > /etc/ppp/chap-secrets<<EOF
-# Secrets for authentication using CHAP
+    cat > /etc/ppp/chap-secrets <<EOF
 # client    server    secret    IP addresses
-${username}    l2tpd    ${password}      *
-kr1    l2tpd    123        *
-
-
+$username   l2tpd     $password  *
 EOF
-
 }
 
-
-
-yum_install(){
-
-    config_install
-
-    cp -pf /etc/sysctl.conf /etc/sysctl.conf.bak
-
-    echo "# Added by L2TP VPN" >> /etc/sysctl.conf
-    echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
-    echo "net.ipv4.tcp_syncookies=1" >> /etc/sysctl.conf
-    echo "net.ipv4.icmp_echo_ignore_broadcasts=1" >> /etc/sysctl.conf
-    echo "net.ipv4.icmp_ignore_bogus_error_responses=1" >> /etc/sysctl.conf
-
-    for each in `ls /proc/sys/net/ipv4/conf/`; do
-        echo "net.ipv4.conf.${each}.accept_source_route=0" >> /etc/sysctl.conf
-        echo "net.ipv4.conf.${each}.accept_redirects=0" >> /etc/sysctl.conf
-        echo "net.ipv4.conf.${each}.send_redirects=0" >> /etc/sysctl.conf
-        echo "net.ipv4.conf.${each}.rp_filter=0" >> /etc/sysctl.conf
-    done
+enable_ip_forwarding(){
+    echo "Enabling IP forwarding..."
+    sed -i '/^#net.ipv4.ip_forward=1/c\net.ipv4.ip_forward=1' /etc/sysctl.conf
     sysctl -p
+}
 
-    systemctl enable ipsec
-    systemctl enable xl2tpd
-    systemctl restart ipsec
+configure_iptables(){
+    echo "Configuring iptables rules..."
+    iptables -F
+    iptables -X
+    iptables -t nat -F
+    iptables -t nat -X
+
+    iptables -A INPUT -p udp --dport 500 -j ACCEPT
+    iptables -A INPUT -p udp --dport 4500 -j ACCEPT
+    iptables -A INPUT -p udp --dport 1701 -j ACCEPT
+    iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    iptables -A INPUT -i lo -j ACCEPT
+    iptables -A INPUT -p icmp -j ACCEPT
+    iptables -P INPUT DROP
+    iptables -P FORWARD ACCEPT
+    iptables -P OUTPUT ACCEPT
+
+    iptables -t nat -A POSTROUTING -s ${iprange}.0/24 -o eth0 -j MASQUERADE
+
+    netfilter-persistent save
+}
+
+start_services(){
+    echo "Starting services..."
+    systemctl restart strongswan
     systemctl restart xl2tpd
-    echo "Checking ipsec status..."
-    systemctl -a | grep ipsec
-    echo "Checking xl2tpd status..."
-    systemctl -a | grep xl2tpd
-
+    systemctl enable strongswan
+    systemctl enable xl2tpd
 }
 
-finally(){
-
-    ipsec verify
-  
-
-systemctl stop firewalld
-systemctl disable firewalld
-systemctl enable iptables
-systemctl start iptables
-
-
-cat > /etc/sysconfig/iptables <<EOF
-# Added by L2TP VPN script
-*filter
-:INPUT ACCEPT [0:0]
-:FORWARD ACCEPT [0:0]
-:OUTPUT ACCEPT [0:0]
--A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
--A INPUT -p icmp -j ACCEPT
--A INPUT -i lo -j ACCEPT
--A INPUT -p tcp -m multiport --dports 81,1723,22,44158,2021,8080,8443 -j ACCEPT
--A INPUT -p udp -m multiport --dports 500,4500,1701,1680 -j ACCEPT
--A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -s ${iprange}.0/24  -j ACCEPT
--A FORWARD -d ${iprange}.0/24  -j ACCEPT
--A FORWARD -i eth0 -o ppp+ -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -i ppp+ -o eth0 -j ACCEPT
--A FORWARD -i ppp+ -o ppp+ -j ACCEPT
-
-COMMIT
-*nat
-:PREROUTING ACCEPT [0:0]
-:OUTPUT ACCEPT [0:0]
-:POSTROUTING ACCEPT [0:0]
--A POSTROUTING -s ${iprange}.0/24  -j MASQUERADE
-COMMIT
-EOF
-
-
-
-    systemctl restart iptables
-	# systemctl restart pptpd
-    echo "Enjoy it!"
+print_info(){
     echo
-	echo "If there is no [FAILED] above, you can connect to your L2TP "
-    echo "VPN Server with the default Username/Password is below:"
-    echo
-    echo "Server IP: ${IP}"
-    echo "PSK      : ${mypsk}"
-
-	
-	
+    echo "VPN setup completed."
+    echo "=============================="
+    echo "Server IP   : $IP"
+    echo "Username    : $username"
+    echo "Password    : $password"
+    echo "PSK         : $mypsk"
+    echo "=============================="
 }
 
-
-l2tp(){
-    clear
-    echo
+main(){
     rootness
     tunavailable
-    disable_selinux
-    get_os_info
+    get_ip
     preinstall_l2tp
-    install_l2tp
-    finally
+    disable_firewalld
+    install_dependencies
+    configure_ipsec
+    configure_xl2tpd
+    enable_ip_forwarding
+    configure_iptables
+    start_services
+    print_info
 }
 
-
-# Main process
-action=$1
-if [ -z ${action} ] && [ "`basename $0`" != "l2tp" ]; then
-    action=install
-fi
-
-case ${action} in
-    install)
-        l2tp 2>&1 | tee ${cur_dir}/l2tp.log
-        ;;
-esac
+main
