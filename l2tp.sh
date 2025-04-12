@@ -21,7 +21,7 @@ check_tun() {
 }
 
 get_ip() {
-    IP=$(hostname -I | awk '{print $1}')
+    IP=$(wget -qO- ip.sb)
     if [[ -z "$IP" ]]; then
         IP=$(wget -qO- ipv4.icanhazip.com)
     fi
@@ -37,19 +37,39 @@ install_packages() {
 configure_ipsec() {
     echo "[INFO] Configuring IPsec..."
     cat > /etc/ipsec.conf <<EOF
+cversion 2.0
+
 config setup
-    uniqueids=never 
-    charondebug="ike 1, knl 1, cfg 0"
+    protostack=netkey
+    nhelpers=0
+    uniqueids=no
+    interfaces=%defaultroute
+    virtual_private=%v4:10.0.0.0/8,%v4:192.168.0.0/16,%v4:172.16.0.0/12
 
 conn l2tp-psk
-    keyexchange=ikev1
+    rightsubnet=vhost:0.0.0.0/0  # 修正子网定义
+    also=l2tp-psk-nonat
+
+conn l2tp-psk-nonat
     authby=secret
+    pfs=no
+    auto=add
+    keyingtries=3
+    rekey=no
+    ikelifetime=8h
+    keylife=1h
     type=transport
-    left=$IP
+    left=%defaultroute
+    leftid=$IP
     leftprotoport=17/1701
     right=%any
     rightprotoport=17/%any
-    auto=add
+    dpddelay=40
+    dpdtimeout=130
+    dpdaction=restart  # 改为重启
+    sha2-truncbug=yes
+    ike=aes128-sha1-modp1024  # 兼端算法
+    esp=aes256-modp1024,aes128-sha1-modp1024
 EOF
 
     cat > /etc/ipsec.secrets <<EOF
@@ -84,10 +104,7 @@ ms-dns 8.8.4.4
 auth
 mtu 1410
 mru 1410
-crtscts
-lock
 hide-password
-modem
 debug
 proxyarp
 lcp-echo-failure 4
@@ -126,9 +143,9 @@ EOF
 
 restart_services() {
     echo "[INFO] Restarting services..."
-    systemctl restart strongswan
+    systemctl enable strongswan-starter
+    systemctl start strongswan-starter
     systemctl restart xl2tpd
-    systemctl enable strongswan
     systemctl enable xl2tpd
 }
 
