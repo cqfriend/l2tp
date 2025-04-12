@@ -37,7 +37,7 @@ install_packages() {
 configure_ipsec() {
     echo "[INFO] Configuring IPsec..."
     cat > /etc/ipsec.conf <<EOF
-cversion 2.0
+version 2.0
 
 config setup
     protostack=netkey
