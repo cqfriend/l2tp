@@ -2,8 +2,8 @@
 set -e
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-username="piminer"
-password="piminer123"
+username="pi"
+password="pi123"
 mypsk="1"
 
 check_root() {
@@ -86,7 +86,7 @@ configure_xl2tpd() {
 port = 1701
 
 [lns default]
-ip range = ${iprange}.10-${iprange}.100
+ip range = ${iprange}.2-${iprange}.2
 local ip = ${iprange}.1
 require chap = yes
 refuse pap = yes
@@ -131,6 +131,25 @@ configure_firewall() {
     iptables -A INPUT -p udp --dport 1701 -j ACCEPT
     iptables -A INPUT -p esp -j ACCEPT
     iptables -A INPUT -p ah -j ACCEPT
+    # 定义 VPN 客户端 IP
+    VPN_CLIENT_IP="${iprange}.2"
+
+    # 批量开放端口 31400-31409 的 TCP 和 UDP 流量
+    PORT_START=31400
+    PORT_END=31409
+
+    # 使用单个规则处理 TCP 和 UDP 的端口范围
+    iptables -A INPUT -p tcp --match multiport --dports ${PORT_START}:${PORT_END} -j ACCEPT
+    iptables -A INPUT -p udp --match multiport --dports ${PORT_START}:${PORT_END} -j ACCEPT
+
+    # DNAT 规则
+    iptables -t nat -A PREROUTING -p tcp --match multiport --dports ${PORT_START}:${PORT_END} -j DNAT --to-destination $VPN_CLIENT_IP:${PORT_START}-${PORT_END}
+    iptables -t nat -A PREROUTING -p udp --match multiport --dports ${PORT_START}:${PORT_END} -j DNAT --to-destination $VPN_CLIENT_IP:${PORT_START}-${PORT_END}
+
+    # SNAT 规则
+    iptables -t nat -A POSTROUTING -p tcp -d $VPN_CLIENT_IP --match multiport --dports ${PORT_START}:${PORT_END} -j SNto-source $IP
+    iptables -t nat -A POSTROUTING -p udp -d $VPN_CLIENT_IP --match multiport --dports ${PORT_START}:${PORT_END} -j SNAT --to-source $IP
+    
 
     iptables-save > /etc/iptables.rules
 
