@@ -125,6 +125,17 @@ enable_ip_forwarding() {
 
 configure_firewall() {
     echo "[INFO] Configuring iptables..."
+    # 清除 nat 表的所有规则
+iptables -t nat -F
+
+# 清除 filter 表的所有规则
+iptables -F
+
+# 清除 mangle 表的所有规则（如果有使用）
+iptables -t mangle -F
+
+# 清除 raw 表的所有规则（如果有使用）
+iptables -t raw -F
     iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
     iptables -A INPUT -p udp --dport 500 -j ACCEPT
     iptables -A INPUT -p udp --dport 4500 -j ACCEPT
@@ -140,16 +151,12 @@ configure_firewall() {
 
     # 使用单个规则处理 TCP 和 UDP 的端口范围
     iptables -A INPUT -p tcp --match multiport --dports ${PORT_START}:${PORT_END} -j ACCEPT
-    iptables -A INPUT -p udp --match multiport --dports ${PORT_START}:${PORT_END} -j ACCEPT
+    iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+
 
     # DNAT 规则
     iptables -t nat -A PREROUTING -p tcp --match multiport --dports ${PORT_START}:${PORT_END} -j DNAT --to-destination $VPN_CLIENT_IP:${PORT_START}-${PORT_END}
-    iptables -t nat -A PREROUTING -p udp --match multiport --dports ${PORT_START}:${PORT_END} -j DNAT --to-destination $VPN_CLIENT_IP:${PORT_START}-${PORT_END}
 
-    # SNAT 规则
-    iptables -t nat -A POSTROUTING -p tcp -d $VPN_CLIENT_IP --match multiport --dports ${PORT_START}:${PORT_END} -j SNto-source $IP
-    iptables -t nat -A POSTROUTING -p udp -d $VPN_CLIENT_IP --match multiport --dports ${PORT_START}:${PORT_END} -j SNAT --to-source $IP
-    
 
     iptables-save > /etc/iptables.rules
 
@@ -166,6 +173,8 @@ restart_services() {
     systemctl start strongswan-starter
     systemctl restart xl2tpd
     systemctl enable xl2tpd
+    systemctl restart strongswan-starter
+
 }
 
 print_info() {
