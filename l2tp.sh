@@ -102,8 +102,8 @@ require-mschap-v2
 ms-dns 8.8.8.8
 ms-dns 8.8.4.4
 auth
-mtu 1410
-mru 1410
+mtu 1300
+mru 1300
 hide-password
 debug
 proxyarp
