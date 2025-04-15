@@ -119,7 +119,7 @@ EOF
 
 enable_ip_forwarding() {
     echo "[INFO] Enabling IP forwarding..."
-    echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-l2tp.conf
+    echo 'net.ipv4.ip_forward=1' > /etc/sysctl.conf
     sysctl -p /etc/sysctl.d/99-l2tp.conf
 }
 
